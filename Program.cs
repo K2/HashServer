@@ -18,7 +18,11 @@ namespace HashServer
 {
     public class Program
     {
+        public static AppOptions Settings;
+        public static ILogger log { get; set; }
+
         public IConfigurationRoot Configuration { get; set; }
+
 
         public void ConfigureServices(IServiceCollection services)
         {
@@ -39,28 +43,28 @@ namespace HashServer
                 .SetBasePath(Directory.GetCurrentDirectory())
                 .AddJsonFile("appsettings.json",  optional: false, reloadOnChange: true)
                 .Build();
-            var appConfig = configuration.GetSection("App").Get<AppOptions>();
+            Settings = configuration.GetSection("App").Get<AppOptions>();
 
-            appConfig.ToString();
+            Settings.ToString();
 
-            var basePort = appConfig.Host.BasePort;
+            var basePort = Settings.Host.BasePort;
             
             var host = new WebHostBuilder()
             .ConfigureLogging((_, factory) =>
             {
                 factory.ClearProviders();
-                factory.SetMinimumLevel(LogLevel.Warning);
+                factory.SetMinimumLevel(Enum.Parse<LogLevel>(Settings.Host.LogLevel));
                 factory.AddConsole();
             })
             .UseKestrel(options =>
             {
                 // Run callbacks on the transport thread
                 options.ApplicationSchedulingMode = SchedulingMode.ThreadPool;
-                options.Listen(IPAddress.Loopback, basePort, listenOptions =>
+                options.Listen(IPAddress.Any, basePort, listenOptions =>
                 {
                     // Uncomment the following to enable Nagle's algorithm for this endpoint.
                     listenOptions.NoDelay = false;
-                    listenOptions.KestrelServerOptions.Limits.MaxConcurrentConnections = 1024;
+                    listenOptions.KestrelServerOptions.Limits.MaxConcurrentConnections = Settings.Host.MaxConcurrentConnections;
                     listenOptions.KestrelServerOptions.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(1);
                     listenOptions.KestrelServerOptions.AllowSynchronousIO = true;
                     listenOptions.UseConnectionLogging();
@@ -68,7 +72,7 @@ namespace HashServer
 
                 options.Listen(IPAddress.Loopback, basePort + 1, listenOptions =>
                 {
-                    listenOptions.UseHttps("testCert.pfx", "testPassword");
+                    listenOptions.UseHttps(Settings.Host.CertificateFile, Settings.Host.CertificatePassword);
                     listenOptions.UseConnectionLogging();
                 });
             })
@@ -77,11 +81,11 @@ namespace HashServer
 #if DEBUG
                 options.ThreadCount = 1;
 #else
-                options.ThreadCount = 32;
+                options.ThreadCount = Settings.Host.ThreadCount;
 #endif
             })
             .UseContentRoot(Directory.GetCurrentDirectory())
-            .UseUrls(appConfig.Internal.gRoot, appConfig.InternalSSL.gRoot)
+            .UseUrls(Settings.Internal.gRoot, Settings.InternalSSL.gRoot)
             .UseStartup<Startup>()
             .Build();
             return host.RunAsync();

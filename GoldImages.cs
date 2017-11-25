@@ -37,6 +37,8 @@ namespace HashServer
         public static ConcurrentDictionary<string, ConcurrentBag<Tuple<uint, uint, string>>> DiskFiles;
         public static ILogger Log;
 
+        public static bool AtLeastOneGoldImageSetIndexed;
+
         static string CurrFolderRoot;
 
         public GoldImages() {
@@ -61,6 +63,7 @@ namespace HashServer
                 CurrFolderRoot = Path.GetPathRoot(folder);
                 Recursive(folder);
             }
+            AtLeastOneGoldImageSetIndexed = true;
             Log.Log<string>(LogLevel.Information, new EventId(1, "ImageLoad"), $"Done gold image files, count is {DiskFiles.Count}", null, (state, ex) => { return $"{state}"; });
         }
 

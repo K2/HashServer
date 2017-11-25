@@ -76,10 +76,14 @@ namespace HashServer
             // This should be moved into some global cache so each Process can share the info for shared modules etc..
             if (SecOffset == 0)
             {
+                Program.log.LogTrace($"Attempting Header delocation {e} Relocation Delta {Delta:x} ");
                 DeLocate.DelocateHeader(block, OrigBase, (int)e.ImageBaseOffset, e.Is64);
 
                 for (int i = e.CheckSumPos; i < e.CheckSumPos + 4; i++)
+                {
+                    Program.log.LogTrace($"Ignoring checksum {Convert.ToInt32(block[i]):x} ");
                     block[i] = 0;
+                }
 
                 // I hate how bound imports sit's in the text section it's not code!
                 int BoundImportsOffset = e.Directories[11].Item1;
@@ -100,6 +104,8 @@ namespace HashServer
                 }
                 if (e.BoundImprotLen > 0x400)
                     e.BoundImprotLen = 0x3FC;
+
+                Program.log.LogTrace($"Ignoring bound imports length {e.BoundImprotLen}");
 
                 foreach (var dirEntry in e.Directories)
                     if (dirEntry.Item1 < 0x1000 && ((dirEntry.Item1 + dirEntry.Item2) < 0x1000))
@@ -138,8 +144,7 @@ namespace HashServer
             long content_Len = 0L, RVA = 0L, SecOffset = 0L;
             var block = new Byte[0x1000];
             MiniSection ms = MiniSection.Empty;
-            string modName = string.Empty, targetName = string.Empty;
-
+            string modName = string.Empty, targetName = string.Empty, hash = string.Empty;
             var req = ctx.Request;
             var resp = ctx.Response;
 
@@ -148,13 +153,23 @@ namespace HashServer
             try {
                 content_Len = req.ContentLength ?? 0;
                 entries = req.Query.ToDictionary(q => q.Key, q => (string)q.Value);
+
                 // attempt to just dump back the binary we would of hashed
-                if (content_Len == 0 && entries.ContainsKey("file") && !string.IsNullOrWhiteSpace(entries["file"]))
+                if (req.Method == "GET")
                 {
+                    if(!entries.ContainsKey("file") || string.IsNullOrWhiteSpace(entries["file"]))
+                    {
+                        log.LogWarning($"Get requests require a file parameter, none was sent.");
+                        resp.StatusCode = (int) HttpStatusCode.NotFound;
+                        return;
+                    }
                     var return_file = entries["file"].ToLower();
                     var ret_file_base = Path.GetFileName(return_file);
                     if (!GoldImages.DiskFiles.ContainsKey(ret_file_base))
+                    {
+                        log.LogInformation($"Unknown file requested from client [{ret_file_base}].");
                         return;
+                    }
 
                     var file_set = GoldImages.DiskFiles[ret_file_base];
                     foreach (var x in file_set)
@@ -171,9 +186,10 @@ namespace HashServer
                                     fout.Read(block, 0, 0x1000);
                                     var e = Extract.IsBlockaPE(block);
 
-                                    // one page at a time
-                                    bool parsed = false;
-                                    BaseAddress = CODEVIEW_HEADER.ParseUlong(entries["mapped"], ref parsed);
+                                    // PS sends this in base 10
+                                    var parsed = ulong.TryParse(entries["mapped"], out BaseAddress);
+
+                                    log.LogInformation($"Requested relocation address of returned image  [{BaseAddress:x}], performing relocations.");
 
                                     if (e.SizeOfHeaders < block.Length)
                                         Buffer.BlockCopy(nullBuff, 0, block, (int)e.SizeOfHeaders, block.Length - (int)e.SizeOfHeaders);
@@ -217,7 +233,16 @@ namespace HashServer
                             }
                         }
                     }
-                } } catch (Exception ex) { }
+                    log.LogTrace("Get request serviced.");
+                    return;
+                }
+            } catch (Exception ex) { log.LogWarning($"Handling exception {ex}"); }
+
+            if(req.Method != "POST")
+            {
+                log.LogWarning($"POST or GET allowed only, client sent {req.Method}");
+                return;
+            }
 
             var rv = new HashSet<PageHashBlockResult>();
             var cv = CODEVIEW_HEADER.Init(entries);
@@ -231,11 +256,14 @@ namespace HashServer
                 }
                 log.Log<string>(LogLevel.Trace, new EventId(2, "Read"), $"read post body {bytesRead}", null, (state, ex) => $"{state}");
 
-                var hash = Encoding.Default.GetString(buffer);
+                hash = Encoding.Default.GetString(buffer);
                 // preconfigure return buffer so we will always return FALSE for failure
                 mph = JsonConvert.DeserializeObject<MemPageHash>(hash);
                 if (mph == null)
+                {
+                    log.LogWarning($"Client sent a serialized JSON POST content that were unable to handle Data:[{hash}], len:[{content_Len}]");
                     return;
+                }
 
                 rv.Add(new PageHashBlockResult() { Address = mph.AllocationBase, HashCheckEquivalant = false });
                 foreach (var ph in mph.HashSet)
@@ -252,6 +280,7 @@ namespace HashServer
                 if (modName.Length <= 3 || modName.Contains(".."))
                 {
                     await failure.CopyToAsync(resp.Body).ConfigureAwait(false);
+                    log.LogWarning($"Client filename [{mph.ModuleName}] invalid or Likely dynamic code at address [{mph.BaseAddress}:x]");
                     return;
                 }
 
@@ -266,16 +295,19 @@ namespace HashServer
                         x == Path.PathSeparator))
                 {
                     await failure.CopyToAsync(resp.Body).ConfigureAwait(false);
+                    log.LogWarning($"Client filename invalid or possibly evil [{mph.ModuleName}]");
                     return;
                 }
 
                 // should be redundant given were already at the last '\\'
                 modName = Path.GetFileName(modName);
 
+
             }
             catch (Exception ex)
             {
                 await failure.CopyToAsync(resp.Body).ConfigureAwait(false);
+                log.LogWarning($"Failure, check exception {ex}");
                 return;
             }
 
@@ -283,9 +315,12 @@ namespace HashServer
             cv.TimeDateStamp = mph.TimeDateStamp;
             cv.VSize = mph.ImageSize;
 
-            if (cv.TimeDateStamp < 0x10000000 || cv.VSize == 0)
+            log.LogTrace($"Performing lookup on client requested dtails [{mph.ModuleName}] [{cv.TimeDateStamp:x}] [{cv.VSize:x}]");
+
+            if (cv.TimeDateStamp == 0|| cv.VSize == 0)
             {
                 await failure.CopyToAsync(resp.Body).ConfigureAwait(false);
+                log.LogWarning($"Client timestamp is out of range [{cv.TimeDateStamp:x}]");
                 return;
             }
             // if we do not have this binary locally cached
@@ -295,6 +330,8 @@ namespace HashServer
             // update targetname if we can find it in the local ngen cache
             if (localGoldBinaryFound)
             {
+                log.LogTrace("Found candidates for client integrity check.");
+
                 localGoldBinaryFound = false;
                 var goldEntries = GoldImages.DiskFiles[cv.Name];
 
@@ -304,6 +341,7 @@ namespace HashServer
                     {
                         targetName = ng.Item3;
                         localGoldBinaryFound = true;
+                        log.LogInformation($"Matched candiate for client [{targetName}]");
                         break;
                     }
                 }
@@ -315,6 +353,7 @@ namespace HashServer
                         {
                             targetName = ng.Item3;
                             localGoldBinaryFound = true;
+                            log.LogInformation($"Matched candiate for client {targetName}");
                             break;
                         }
                     }
@@ -323,10 +362,29 @@ namespace HashServer
 
             if (!localGoldBinaryFound)
             {
-                await failure.CopyToAsync(resp.Body).ConfigureAwait(false);
-                return;
+                if (!Program.Settings.Host.ProxyToExternalgRoot)
+                {
+                    await failure.CopyToAsync(resp.Body).ConfigureAwait(false);
+                    log.LogInformation($"Unable to locate a candiate that fits required criteria to requeted info, find original media for client requested file {modName} and store into golden image filesystem.7");
+                    return;
+                }
+                else // proxy is enabled
+                {
+                    if(Program.Settings.External != null && !string.IsNullOrWhiteSpace(Program.Settings.External.gRoot))
+                    {
+                        log.LogInformation($"Remote service call started");
+                        resp.StatusCode = (int) HttpStatusCode.OK;
+                        try { 
+                            await WebAPI.ProxyObject(hash, resp.Body);
+                        } catch (Exception ex)  {
+                            log.LogWarning($"exceptoin in calling external gRoot server.  {ex}");
+                            resp.StatusCode = (int) HttpStatusCode.NotFound;
+                        }
+                        log.LogInformation($"External server handled request.");
+                        return;
+                    }
+                }
             }
-
             // setup connection to desired originating input so we can hash it and determine if
             // the caller is investigating the same binary
             using (var fr = new FileStream(targetName, FileMode.Open, FileAccess.Read))
@@ -338,6 +396,7 @@ namespace HashServer
                 if (e == null)
                 {
                     await failure.CopyToAsync(resp.Body).ConfigureAwait(false);
+                    log.LogWarning($"Corrupt image or some failure, unable to determine PE information for request {targetName}");
                     return;
                 }
 
@@ -377,6 +436,7 @@ namespace HashServer
                     if (RVA > uint.MaxValue || RVA < 0)
                     {
                         await failure.CopyToAsync(resp.Body).ConfigureAwait(false);
+                        log.LogWarning($"RVA in client JSON request seems invalid, aborting. {RVA:x}");
                         return;
                     }
 
@@ -411,12 +471,56 @@ namespace HashServer
                     }
                 }
             }
+#if FALSE
+            // find a better way todo this...
+            if(Program.Settings.Host.ProxyFailedOrMissing)
+            {
+                if(rv.Any((x) => !x.HashCheckEquivalant))
+                {
+                    HttpResponseMessage prox_rv = null;
+                    log.LogInformation($"At least one hash check failed, ProxyFailedOrMissing check to double check results");
+                    try {
+                        prox_rv = WebAPI.POST(hash).Result;
+                    } catch (Exception ex)
+                    {
+                        log.LogWarning($"Error in contacting remote server. {ex}");
+                    }
+                    if (prox_rv == null)
+                        return;
 
+                    try
+                    {
+                        var prox_data = await prox_rv.Content.ReadAsByteArrayAsync();
+                        var prox_r = JsonConvert.DeserializeObject<HashSet<PageHashBlockResult>>(Encoding.Default.GetString(prox_data));
+                        HashSet<PageHashBlockResult> CombinedLookups = new HashSet<PageHashBlockResult>();
+                        var enumer = rv.GetEnumerator();
+                        enumer.MoveNext();
+                        foreach (var pbr in prox_r)
+                        {
+                            if (enumer.Current.Address != pbr.Address)
+                            {
+                                log.LogInformation("Server and local results are not aligne, unable to corolate checks further");
+                                break;
+                            }
+                            // build combined list checking if local passed, use it, if not use the server result, maybe it passed ? ;)
+                            CombinedLookups.Add(enumer.Current.HashCheckEquivalant ? enumer.Current : pbr);
+                            enumer.MoveNext();
+                        }
+                        log.LogInformation($"Using combined lookups Orig Pass count[{rv.Count((x) => x.HashCheckEquivalant)}] New pass count [{CombinedLookups.Count((x) => x.HashCheckEquivalant)}]");
+                        rv = CombinedLookups;
+                    } catch (Exception ex)
+                    {
+                        log.LogWarning($"Error in corolation processing {ex}");
+                    }
+                }
+            }
+#endif
             // since we made it this far we should re-serialize our state since we currently are holding onto
             // and object that is used for a fast path error exit (all failed)
             var r = JsonConvert.SerializeObject(rv, Formatting.Indented);
             resp.StatusCode = 200;
             var success = new StringContent(r, Encoding.Default, "application/json").CopyToAsync(resp.Body).ConfigureAwait(false);
+            log.LogInformation($"Finished client service call, hash check results sent.");
         }
     }
 }

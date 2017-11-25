@@ -11,7 +11,7 @@ namespace HashServer
         public gRoots External { get; set; }
         public gRoots Internal { get; set; }
         public gRoots InternalSSL { get; set; }
-        public gFiles Profile { get; set; }
+        public gFiles GoldSourceFiles { get; set; }
     }
 
     public class gRoots
@@ -34,5 +34,18 @@ namespace HashServer
     {
         public string Machine { get; set; }
         public ushort BasePort { get; set; }
+
+        // This setting will enable proxying to the external groot.
+        // You will be able to maintain just a selection of unique binaries not nessissiarally the whole system.
+        public bool ProxyToExternalgRoot { get; set; }
+        public ushort ThreadCount { get; set; }
+        public long MaxConcurrentConnections { get; set; }
+
+        public string LogLevel { get; set; }
+
+        public string CertificateFile { get; set; }
+        public string CertificatePassword { get; set; }
+
+        public string FileLocateNfo { get; set; }
     }
 }

@@ -32,6 +32,7 @@ using System.Net.Http;
 using ProtoBuf;
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Configuration.Json;
+using System.Threading;
 
 namespace HashServer
 {
@@ -45,24 +46,54 @@ namespace HashServer
         public void Configure(IApplicationBuilder app, ILoggerFactory loggerFactory)
         {
             var logger = loggerFactory.CreateLogger("Default");
-            logger.Log<string>(LogLevel.Debug, new EventId(0, "Configure"), "Booting up", null, (state, ex) => { return $"{state}"; });
+            Program.log = logger;
+
+            logger.Log<string>(LogLevel.Information, new EventId(0, "Configure"), "Booting up", null, (state, ex) => { return $"{state}"; });
             List<string> gRoots = new List<string>();
             
-            var configBuilder = new ConfigurationBuilder().AddJsonFile("appsettings.json");
-            var config = configBuilder.Build();
-            config.GetSection("GoldRoots");
-
-            foreach (var root in config.GetChildren())
-                gRoots.Add(root.Value);
-
             var gi = new GoldImages(logger);
 
-            if(File.Exists(GoldenState))
-                using (var SerData = File.OpenRead(GoldenState))
-                    GoldImages.DiskFiles = Serializer.Deserialize<ConcurrentDictionary<string, ConcurrentBag<Tuple<uint, uint, string>>>>(SerData);
-            else 
-                 gi.Init(new string[] { "T:\\" });
+            // figuer out a default locatedb if one does not exist
+            var locateDb = File.Exists(Program.Settings.Host.FileLocateNfo) ? Program.Settings.Host.FileLocateNfo : GoldenState;
 
+            if (File.Exists(locateDb))
+            {
+                using (var SerData = File.OpenRead(locateDb))
+                {
+                    logger.LogInformation($"Serialed data found {locateDb} for golden image locate database, will skip filesystem scan");
+                    GoldImages.DiskFiles = Serializer.Deserialize<ConcurrentDictionary<string, ConcurrentBag<Tuple<uint, uint, string>>>>(SerData);
+                    GoldImages.AtLeastOneGoldImageSetIndexed = true;
+                    logger.LogInformation($"{GoldImages.DiskFiles.Count} files have been located from the configured inputs, to regenerate, delete the {locateDb} and restart.");
+                    if (GoldImages.DiskFiles.Count < 1024)
+                        logger.LogWarning($"Only {GoldImages.DiskFiles.Count} files found, this seems low, try adding more folders to the config file. Or delete the {locateDb} file so it can be re-generated.");
+                }
+            } else if(Program.Settings.GoldSourceFiles != null && Program.Settings.GoldSourceFiles.Images != null && Program.Settings.GoldSourceFiles.Images.Length > 0)
+            {
+                foreach(var imageSet in Program.Settings.GoldSourceFiles.Images)
+                {
+                    logger.LogInformation($"Compiling gold locate db from {imageSet.ROOT} {imageSet.OS}, server will continue after filesystem scan.");
+                    if(!Directory.Exists(imageSet.ROOT))
+                    {
+                        logger.LogCritical($"Unable to handle configured gold image path {imageSet.ROOT} skipping.");
+                        continue;
+                    }
+                    gi.Init(new string[] { imageSet.ROOT });
+                }
+            }
+            else
+            // by default we'll use the local C:\ as the golden image, it's not very optimal since 
+            // many files will be inaccessable due to permissions and in-use
+            {
+                logger.LogInformation("No specified path found to use as 'golden' images.  Using C:");
+                gi.Init(new string[] { "c:\\" });
+            }
+
+            if(!GoldImages.AtLeastOneGoldImageSetIndexed)
+            {
+                logger.LogCritical($"Fatal state!!! No golden images were able to be loaded so this server has no work to do, exiting in 5 seconds.");
+                Thread.Sleep(5000);
+                Environment.Exit(-1);
+            }
 
             try
             {
@@ -78,14 +109,20 @@ namespace HashServer
                     var request = context.Request;
                     var response = context.Response;
 
-
                     await PageHash.Run(context, "x", logger).ConfigureAwait(false);
                     return;
                 });
             }
             finally
             {
-                using (var serOut = File.OpenWrite(GoldenState))
+                var saveFile = Program.Settings.Host.FileLocateNfo;
+                if (string.IsNullOrWhiteSpace(saveFile))
+                    saveFile = GoldenState;
+
+                Program.Settings.Host.FileLocateNfo = GoldenState;
+
+                logger.LogInformation($"Saving locate database to {saveFile}");
+                using (var serOut = File.OpenWrite(saveFile))
                     Serializer.Serialize<ConcurrentDictionary<string, ConcurrentBag<Tuple<uint, uint, string>>>>(serOut, GoldImages.DiskFiles);
             }
         }

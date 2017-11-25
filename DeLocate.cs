@@ -22,6 +22,8 @@ using static System.Console;
 using System.Globalization;
 using System.Collections.Concurrent;
 using   Newtonsoft.Json;
+using Microsoft.Extensions.Logging;
+using HashServer;
 #if inVtero
 using inVtero.net.Hashing;
 #endif
@@ -385,6 +387,8 @@ namespace Reloc
         /// <param name="relocs">preprocessed .reloc data</param>
         public unsafe void DeLocateBuff64(byte[] bytes, ulong Delta, ulong RVA, Reloc[] relocs)
         {
+            Program.log.LogTrace($"64Bit Delocation Delta {Delta:x} RVA{RVA:x} Relocs available {relocs != null}");
+
             // round down to page alignment
             var xVA = RVA & ~4095UL;
 
@@ -747,6 +751,8 @@ namespace Reloc
         }
         public unsafe void DeLocateBuff32(byte[] bytes, uint Delta, uint RVA, Reloc[] relocs)
         {
+            Program.log.LogTrace($"32Bit Delocation Delta {Delta:x} RVA{RVA:x} Relocs available {relocs != null}");
+
             // round down to page alignment
             var xVA = RVA & ~4095u;
 
