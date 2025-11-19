@@ -35,6 +35,8 @@
 - [Contributing](#-contributing)
 - [License](#-license)
 
+> 💡 **Quick Reference**: See [Quick Reference Guide](docs/QUICK_REFERENCE.md) for commands and common tasks
+
 ---
 
 ## 🎯 Overview
@@ -529,6 +531,8 @@ See [LICENSE](LICENSE) or [agpl-3.0.txt](agpl-3.0.txt) for details.
 - **Issues**: [GitHub Issues](https://github.com/K2/HashServer/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/K2/HashServer/discussions)
 - **Scripting Client**: [K2/Scripting Repository](https://github.com/K2/Scripting)
+- **Security**: See [SECURITY.md](SECURITY.md) for security policy
+- **Contributing**: See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines
 
 ---
 
