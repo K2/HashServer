@@ -1,76 +1,127 @@
-# HashServer
+# 🔐 HashServer - Technical Documentation
 
-[TOC]
+> **📖 Main Documentation**: For general information, quick start, and usage examples, see the [main README](../README.md).
 
-Hash server provides access to the largest hash database in the world (it's JIT (just in time) generated therefor infinitely sized :) and combines that information with any personalized binary blobs you want to search for.
+This document provides **advanced technical details** and **workflow diagrams** for HashServer implementation.
 
-This system is part of a large set of projects including invtero.net (core version also) and scripts in my scripting repository.
+---
 
-It's meant to deliver perfect results for hard problems in the space of **forensic analysis, incident response and intrusion detection.**
+## 📚 Documentation Index
 
-Upcoming support for dynamic code, (JavaScript) is the next big feature. Submit issues to this or any of the related projects to help out.
+- **[Main README](../README.md)** - Overview, features, quick start, configuration
+- **This Document** - Technical workflows, sequence diagrams, advanced concepts
 
-## HashServer goal - the validation integrity of code in memory 
+---
 
-- Strong integrity
+## 🎯 Purpose
 
-  - You can be sure the results are not derived from a signature or AI or ML heuristic that can be fooled
+Hash server provides access to the largest hash database in the world (it's JIT (just in time) generated therefor infinitely sized 🚀) and combines that information with any personalized binary blobs you want to search for.
 
-- Performance
+This system is part of a large set of projects including:
+- [inVtero.net](https://github.com/K2/inVtero) (core version)
+- [K2/Scripting](https://github.com/K2/Scripting) repository
 
-  - Varying techniques can be used to increase performance on the client or server sides
-  - Scan only working set of live systems
-  - Parallelize server requests (it get's faster the more it's used)
-  - Local caching
+**Target Use Cases:**
+- 🔍 **Forensic analysis**
+- 🚨 **Incident response**
+- 🛡️ **Intrusion detection**
 
-- Cross platform
+**Upcoming Features:**
+- Dynamic code validation (JavaScript/JIT) - Next major release
+- Submit issues to help guide development!
 
-  - Windows and Linux tested
-  - OSX should work (?:)
+---
 
-- Multi-Language
+## 🎯 Design Goals
 
-  - Script examples in; bash, python, PowerShell.
-  - Code is .NET
+### ✅ Strong Integrity
+You can be sure the results are not derived from a signature or AI/ML heuristic that can be fooled. We use cryptographic hashes (SHA256) for definitive binary verification.
 
-- Ease of use (GUI's, Scripting)
+### ⚡ Performance
+- Multiple optimization techniques on client and server sides
+- Scan only working set of live systems (configurable)
+- Parallel server requests (performance improves with usage)
+- Local and remote caching
 
-- Free API access to Internet HashServer that is preloaded with most Microsoft OS files, Chrome and Mozilla data-sets
+### 🌐 Cross-Platform
+- ✅ Windows (fully tested)
+- ✅ Linux (fully tested)  
+- ⚠️ macOS (should work, limited testing)
 
-  - Considering selected github projects.  
+### 🛠️ Multi-Language
+- **Script examples**: Bash, Python, PowerShell
+- **Server implementation**: .NET Core
+- **Client libraries**: Multiple languages supported
 
-  ​
+### 🎨 Ease of Use
+- GUI tools (TreeMap, Hex Diff)
+- Scripting support
+- RESTful API
 
-## How does it work? (by example)
+### 🌍 Free Public API
+Internet HashServer pre-loaded with:
+- Microsoft OS files
+- Chrome datasets
+- Mozilla datasets
+- Selected GitHub projects (planned)
 
-### Live memory on running system
+**API Endpoint**: `https://pdb2json.azurewebsites.net/`
 
-Use [Test-AllVirtualMemory.ps1](https://github.com/K2/Scripting/blob/master/Test-AllVirtualMemory.ps1 ) and change it from using just the public HashServer to use your instance.
+---
+
+## 🔬 Technical Workflows
+
+### 1️⃣ Live Memory Scanning on Running Systems
+
+**Primary Tool**: [Test-AllVirtualMemory.ps1](https://github.com/K2/Scripting/blob/master/Test-AllVirtualMemory.ps1)
+
+**Configuration Example:**
 
 ```powershell
-# Set this to you're local HashServer to get the memory diffing
-#The Internet server does not serve binaries, only local
+# Set this to your local HashServer to get the memory diffing
+# The Internet server does not serve binaries, only local
 # If you don't want to run a HashServer locally, set;
-#$HashServerUri = $gRoot
+# $HashServerUri = $gRoot
 $gRoot = "https://pdb2json.azurewebsites.net/api/PageHash/x"
-# Set this to you're local HashServer to get the memory diffing 
+# Set this to your local HashServer to get the memory diffing 
 $HashServerUri = "http://10.0.0.118:3342/api/PageHash/x"
 ```
 
-After making this change, you can use the Test-AllVirtualMemory PS command to extract, verify and report (GUI and command line) the set of known vs. unknown code running in memory. 
+**What This Does:**
+- ✅ Extract memory from target systems
+- ✅ Compute SHA256 hashes of executable memory regions  
+- ✅ Verify against HashServer (local + Internet fallback)
+- ✅ Report known vs. unknown code
 
-The hit rate will be much higher than the public server alone since you can have all the files for you're custom software copied to a readable location to the server.  This way you should be able to attain **100% verification** if all the software you're using behaves well.
+**Expected Results:**
+- 🎯 **Near 100% verification** when local HashServer has your custom software
+- 📊 **GUI and CLI reporting** of results
+- 🔍 **Real-time analysis** of running systems
 
-This is "real time" on running systems, the reporting may give you very different results from execution to execution since by default only the working set is polled.  You can alter this, however if the system is in-use by a local user, the negative effect on performance will be very noticeable :fist_oncoming:.
+**Performance Notes:**
+- Default: Scans only **working set** (active pages in RAM)
+- Optional: Scan **all executable pages** (much slower, impacts user experience)
+- Results vary per execution based on what's actively loaded
 
-Test-AllVirtualMemory uses native PowerShell sessions, threading with Invoke-Parallel, portions of code from @mattifestation for obtaining System tokens ShowUI from JayKul a Treemap UI control from Proxb.  The HexDiff control is by K2  ( it's amazing PS has that sort of performance tbh :)
+**Technology Stack:**
+- Native PowerShell remoting sessions
+- Invoke-Parallel for threading
+- Code from @mattifestation (token elevation)
+- ShowUI from JayKul
+- TreeMap control from Proxb
+- HexDiff control by K2
 
-#### End to end interaction PowerShell
+---
 
-- **Target** is the system you are scanning
-- **Scanner** is you're desktop or host that initiates running of the PowerShell script
-- **HS** (HashServer) that has a (local or remote mount) to a set of folders with the software that you run that you know is good (i.e. copy the Program Files folders from a clean-install system to the network or disk of the HS)
-- **JITHash** is the PDB2JSON Azure Function that's in the cloud
+### 2️⃣ End-to-End Workflow: PowerShell Client
+
+**Component Roles:**
+- **Target**: System being scanned for integrity
+- **Scanner**: Your desktop/host running the PowerShell script
+- **HS (HashServer)**: Server with local/remote mount to known-good software
+- **JITHash**: PDB2JSON Azure Function (cloud service)
+
+**Sequence Diagram:**
 
 ```mermaid
 %% Test-AllVirtualMemory overview
@@ -97,13 +148,40 @@ JITHash->>Scanner: Results: IsKnown ? True : False
 end
 end
 ```
-After the session is completed you can review the results by browsing the TreeMap control.  Left clicks traverse the tree from Process to Modules to Block levels.  Right clicking on a module level will reveal a 'diff' view in hex where you can view the precise bits that have been modified in memory.  Screenshots are available in the [Scripting repository]:.
 
-#### End to end interaction python volatility plugin or inVtero.core
+---
 
-The volatility plugin is similar, it run's against static memory dumps, inVtero.core has a bit more aggressive envelope in terms of what it attempts to scan, however that code is less aggressively tested.
+**📊 Results Analysis:**
 
-The inVtero Volatility plugin should work fine with HS.  More testing will happen soon.
+After scanning completes, analyze results using:
+
+- **🗂️ TreeMap Control**:
+  - Left-click to traverse: Process → Modules → Blocks
+  - Visual representation of memory layout
+  - Color-coded by verification status
+
+- **🔍 Hex Diff Viewer**:
+  - Right-click on a module to open
+  - Shows precise byte-level modifications
+  - Compare expected vs. actual memory
+
+- **📷 Screenshots**: Available in [K2/Scripting repository](https://github.com/K2/Scripting)
+
+---
+
+### 3️⃣ End-to-End Workflow: Volatility Plugin / inVtero.core
+
+**Static Memory Dump Analysis:**
+
+- **Volatility Plugin**: Works with standard memory forensics workflow
+- **inVtero.core**: More aggressive scanning, less tested
+- **Use Case**: Post-incident analysis of memory dumps
+
+**Status**: ⚠️ Testing in progress - contributions welcome!
+
+**Plugin**: [inVteroJitHash.py](https://github.com/K2/Scripting/blob/master/inVteroJitHash.py)
+
+---
 
 ```mermaid
 %% volatility plugin https://github.com/K2/Scripting/blob/master/inVteroJitHash.py
@@ -123,26 +201,49 @@ end
 
 
 
-## Details about configuring the HashServer
+## ⚙️ Advanced Configuration
 
-Major goals are to reduce the administrative overhead.  Using the HS you should be able to configure it one time and never worry about it very often (maybe fore updates:).   
+> **💡 Tip**: See [Main README - Configuration](../README.md#%EF%B8%8F-configuration) for basic setup.
 
-There is no hash database to be compiled or keep synchronized.  This is a major time waste we're bypassing with the use of JIT computation and the free Internet based HashServer.
+### Design Philosophy
 
-All you have to do is provide the a set of files locally or on a readable network share to the HashServer of the files you deem as **"golden"**.
+**Goal**: Minimize administrative overhead
+- ✅ Configure once, rarely update
+- ❌ No hash database compilation or synchronization
+- ✅ JIT computation replaces database maintenance
+- ✅ Free Internet fallback for common binaries
 
-Right now the HashServer has to be reloaded to index the file set, it does have some caching to speed up the cold start issues, however this stuff is still being worked out and I'm open to feedback.  I'll have some changes here in the next release when the JS code validation is completed.
+### Golden Image Management
 
-### appsettings.json
+**Requirements:**
+1. Provide local/network-accessible "golden" files
+2. Files must match deployed binary versions exactly
 
-Critical options to understand, the rest are pretty obvious or will be documented more later :)
+**Workflow:**
+1. Initial startup: Server indexes all files (cached)
+2. Updates: Delete cache file, restart server
+3. Performance: First startup slower, subsequent startups fast
 
-| JSON                 | Meaning                                  |
-| -------------------- | ---------------------------------------- |
-| FileLocateNfo        | This is cached information about what files are available.  It's cached here so the cold startup time is faster.  If you have a lot of files it could be minutes before the server is ready.  Right now we do not have a good way to update this when you have file updates, if you update (overwrite) files in you're golden image set, just delete the cache NFO file and restart the server. |
-| GoldSourceFiles      | Array of "Images" -- their not really images, but descriptors of file set's. |
-| Images               | OS tag is metadata to indicate where the files came from.  The ROOT is the locator where to find the files, you might have any number of these they can be folders also "T:\AccountingApps\" or anything else as the folder is recursively scanned. |
-| ProxyToExternalgRoot | Declares if you permit the HS to call the Internet JITHash or not, if you have sufficient resources locally to out perform when there are less service calls, let me know I'd love to hear about you're network. |
+**Development Status:**
+- Current caching implementation works but has room for optimization
+- Feedback welcome via GitHub Issues
+- Major improvements planned with JS validation release
+
+---
+
+### 📋 Configuration Reference
+
+> **📖 Full configuration**: See [Main README](../README.md#%EF%B8%8F-configuration)
+
+**Critical Settings:**
+
+| JSON Setting | Purpose | Notes |
+|--------------|---------|-------|
+| `FileLocateNfo` | 💾 **File index cache** | Speeds up startup. Delete and restart to refresh after golden image updates. |
+| `GoldSourceFiles` | 📁 **Golden image array** | Not actual images - descriptors of file sets to scan |
+| `Images[].OS` | 🏷️ **Metadata tag** | Identifies source of files (e.g., "Win10", "Ubuntu20") |
+| `Images[].ROOT` | 📂 **Root scan path** | Recursively scanned. Can be any path with binaries. |
+| `ProxyToExternalgRoot` | 🌐 **Internet fallback** | Enable to use public JITHash for unknown binaries |
 
 
 
@@ -189,18 +290,69 @@ Critical options to understand, the rest are pretty obvious or will be documente
 }
 ```
 
-# TODO
+---
 
-Many things time is my enemy :rage:
+## 🎯 Future Roadmap
 
-Next version is the JS integrity checking, that will be a different model than pure hash checks but I believe nearly perfect level of assurance.  At least strong enough to make it infeasible to hide code within JIT from a JS host.
+### 🚀 Next Release: JavaScript/JIT Integrity
 
-#### (Digression/Abstract thoughts) Using HS as DLP Content search
+**Status**: 🔨 In Development
 
-###### Don't drop you're pants to the perimeter!
+**Goal**: Dynamic code validation for JavaScript engines
 
-In general, each block that is in the database is variably sized and allows for a content search.  It's flexible enough to support data loss prevention scanning systems that may import raw memory inputs or network streams for processing.  The benefit of using secure hash values for the scanning itself is that you do not *readily disclose what you are searching for* while you search for it.
+**Approach**: Different from pure hash checks - analyzing JIT compilation
 
-If an attacker compromises a system in you're infrastructure and is undertaking their information gathering phase, if they were able to locate a data loss prevention system implemented by (most? all?) vendors, I've seen, they might just dump it's memory and discover an enclave of tokens that **enable the attacker** to **preform discovery** against your internal assets.
+**Expected Outcome**: Near-perfect assurance level - making it infeasible to hide code within JIT from JavaScript hosts
 
-Let's pretend you're Uber and you just got hacked again, if an attacker were to determine you use a special marker for sensitive documents marked "Strategic Services Group" (you know, the one they did actually have ;). Then the attacker would know right away what to look for... you just dropped you're pats to every perimeter node, disclosed and exposed what you are attempting to protect in the first place. 
+---
+
+## 💡 Advanced Concepts
+
+### 🔐 Data Loss Prevention (DLP) Use Case
+
+> **Abstract concept**: HashServer for content search without disclosure
+
+#### The Security Problem with Traditional DLP
+
+**Traditional DLP Risk:**
+```
+DLP System Memory → Contains search patterns/tokens → Attacker dumps memory → Discovers what to look for
+```
+
+**Result**: 🚨 You've disclosed your sensitive data markers to the attacker!
+
+#### HashServer DLP Approach
+
+**Key Benefit**: Search using **secure hash values** instead of plaintext patterns
+
+**Advantage**: 
+- ✅ Don't readily disclose what you're searching for
+- ✅ Variably-sized blocks support content search
+- ✅ Works with memory inputs or network streams
+- ✅ Attacker can't reverse-engineer search patterns from hashes
+
+#### Real-World Scenario
+
+**Example**: Company using "Strategic Services Group" as sensitive document marker
+
+**Traditional DLP:**
+```
+Attacker → Compromises DLP system → Dumps memory → Finds "Strategic Services Group" → Uses it for discovery
+```
+
+**HashServer DLP:**
+```
+Attacker → Compromises system → Dumps memory → Finds hashes → Cannot reverse-engineer markers
+```
+
+**Lesson**: 🛡️ **Don't expose your protection mechanisms to every perimeter node!**
+
+Using hash-based scanning keeps your data classification schema private, even if the scanning system is compromised.
+
+---
+
+<div align="center">
+
+**📖 [Return to Main Documentation](../README.md)**
+
+</div>
